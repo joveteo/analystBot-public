@@ -90,6 +90,8 @@ python -m analystbot
 
 Runtime data is stored in `data/` and logs in `logs/`.
 
+The first run sends every economic chart. After that, each chart is sent only when FRED publishes new data for that series.
+
 ### Options
 
 | Command | Description |
