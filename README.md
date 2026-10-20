@@ -1,6 +1,6 @@
 # analystBot
 
-A Python bot that collects daily market and economic data, calculates technical indicators, renders charts, and delivers them to a Telegram group.
+A Python bot that collects daily market and economic data, calculates technical indicators, renders charts, and delivers them to a [Telegram group](https://t.me/JsAnalystBot).
 
 ![Telegram overview](assets/screenshots/telegram-overview.png)
 
