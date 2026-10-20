@@ -1,13 +1,13 @@
 # analystBot
 
-A Python bot that collects daily market and economic data, calculates technical indicators, renders charts, and delivers them to a Telegram group.
+A Python bot that collects daily market and economic data, calculates technical indicators, renders charts, and delivers them to a [Telegram group](https://t.me/JsAnalystBot).
 
 ![Telegram overview](assets/screenshots/telegram-overview.png)
 
 ## Features
 
-- **Williams VixFix signals**: daily buy and sell watchlists for a universe of major ETFs and the top 100 U.S. companies by market cap
-- **Supertrend chart**: SPY, QQQ, and IWM on one image
+- **[Williams VixFix](https://github.com/joveteo/trading-view-scripts/blob/main/Larry%20Williams%20VixFix/README.md) signals**: daily buy and sell watchlists for a universe of major ETFs and the top 100 U.S. companies by market cap
+- **[Supertrend](https://github.com/joveteo/trading-view-scripts/blob/main/custom/Custom%20Supertrend/README.md) chart**: SPY, QQQ, and IWM on one image
 - **Market heatmap**: top 100 companies grouped by GICS sector and industry, sized by market cap and coloured by 1-day change
 - **Sector rotation (RRG)**: weekly Relative Rotation Graph of the 11 SPDR sector ETFs against SPY
 - **Economic charts from FRED**: GDP, consumer spending, CPI and PCE inflation, payrolls, unemployment, housing starts, Treasury yields, financial stress, and VIX, with recession shading
@@ -28,9 +28,11 @@ A Python bot that collects daily market and economic data, calculates technical 
 ## Requirements
 
 - Python 3.12 or newer
-- A [tastytrade](https://tastytrade.com) account with an OAuth application (for market data)
+- A [tastytrade](https://tastytrade.com) account with an OAuth application for market data, or see [Alternative data source](#alternative-data-source)
 - A Telegram bot from [@BotFather](https://t.me/BotFather) and a group with topics enabled
 - A [FRED API key](https://fred.stlouisfed.org/docs/api/api_key.html) (optional, for economic charts)
+
+TradingView versions of the indicators are in [trading-view-scripts](https://github.com/joveteo/trading-view-scripts).
 
 ## Installation
 
@@ -76,6 +78,10 @@ Production and sandbox credentials are not interchangeable.
 2. Create a topic for each message type.
 3. Use the group ID for `TELEGRAM_CHAT_ID` and each topic's thread ID for the `TELEGRAM_CHAT_*_ID` variables.
 
+### Alternative data source
+
+If you do not have a tastytrade account, [Massive](https://massive.com) (formerly Polygon.io) provides daily OHLC aggregates and company market caps through a REST API, with a free tier for end-of-day data. Massive is not built in; to use it, replace the client in `src/analystbot/api/tastytrade.py` with one that calls Massive's aggregates and ticker details endpoints and returns the same bar format.
+
 ## Usage
 
 ```bash
@@ -83,6 +89,8 @@ python -m analystbot
 ```
 
 Runtime data is stored in `data/` and logs in `logs/`.
+
+The first run sends every economic chart. After that, each chart is sent only when FRED publishes new data for that series.
 
 ### Options
 
