@@ -1,0 +1,107 @@
+[project]
+name = "analystbot"
+version = "5.3.0"
+description = "Financial market analysis bot with VixFix methodology"
+readme = "README.md"
+requires-python = ">=3.12"
+license = "MIT"
+license-files = ["LICENSE"]
+keywords = ["finance", "stocks", "trading", "vixfix", "technical-analysis"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Financial and Insurance Industry",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Office/Business :: Financial :: Investment",
+]
+dependencies = [
+    "pandas>=3.0.6",
+    "pandas-market-calendars>=5.4.0",
+    "requests>=2.34.2",
+    "python-dotenv>=1.2.4",
+    "matplotlib>=3.11.2",
+    "tastytrade>=13.2.0,<14",
+]
+
+[project.optional-dependencies]
+dev = [
+    "coverage[toml]>=7.16.2",
+    "ruff>=0.16.10",
+    "mypy>=2.4.0",
+    "types-requests>=2.33.0.20260906",
+    "pandas-stubs>=3.0.5.260914",
+]
+
+[project.urls]
+Repository = "https://github.com/joveteo/analystBot-public"
+
+[build-system]
+requires = ["setuptools>=84.0.0", "wheel>=0.48.0"]
+build-backend = "setuptools.build_meta"
+
+[project.scripts]
+analystbot = "analystbot.__main__:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["analystbot*"]
+
+[tool.setuptools.package-data]
+analystbot = ["data/*.json"]
+
+[tool.ruff]
+line-length = 88
+target-version = "py312"
+src = ["src"]
+
+[tool.ruff.lint]
+select = [
+    "F",
+    "E",
+    "W",
+    "I",
+    "UP",
+    "B",
+    "SIM",
+]
+ignore = [
+    "E501",
+]
+
+[tool.ruff.lint.isort]
+known-first-party = ["analystbot"]
+
+[tool.mypy]
+python_version = "3.12"
+mypy_path = "src"
+explicit_package_bases = true
+files = ["src"]
+exclude = ["build/", "venv/", "\\.venv/", "tests/"]
+warn_return_any = true
+warn_unused_ignores = true
+disallow_untyped_defs = false
+
+[[tool.mypy.overrides]]
+module = [
+    "matplotlib",
+    "matplotlib.*",
+    "pandas",
+    "pandas.*",
+    "pandas_market_calendars",
+    "pandas_market_calendars.*",
+    "httpx2",
+    "httpx2.*",
+    "tastytrade",
+    "tastytrade.*",
+]
+ignore_missing_imports = true
+
+[tool.coverage.run]
+branch = true
+source = ["analystbot"]
+
+[tool.coverage.report]
+fail_under = 83.27
+precision = 2
+show_missing = true
+skip_covered = true

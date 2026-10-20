@@ -1,0 +1,11 @@
+pandas==3.0.6
+pandas-market-calendars==5.4.0
+requests==2.34.2
+python-dotenv==1.2.4
+matplotlib==3.11.2
+tastytrade==13.2.3
+coverage==7.16.2
+ruff==0.16.10
+mypy==2.4.0
+types-requests==2.33.0.20260906
+pandas-stubs==3.0.5.260914
