@@ -102,12 +102,15 @@ class Settings:
             self.load()
 
     def load(self, env_path: Path | None = None) -> "Settings":
-        if env_path:
+        override_path = os.getenv("APP_ENV_FILE")
+        if env_path is None and override_path:
+            env_path = Path(override_path)
+        if env_path is not None:
             self.env_path = env_path
 
         if DOTENV_AVAILABLE and self.env_path.exists():
             load_dotenv(self.env_path, override=True)
-        elif DOTENV_AVAILABLE:
+        elif DOTENV_AVAILABLE and env_path is None:
             load_dotenv(override=True)
 
         def _env(name: str) -> str | None:

@@ -3,11 +3,38 @@ from __future__ import annotations
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from analystbot.core.config import Settings, _looks_like_project_root, get_project_root
 
 
 class SettingsValidateTests(unittest.TestCase):
+    def test_missing_explicit_env_file_disables_dotenv_discovery(self) -> None:
+        with (
+            tempfile.TemporaryDirectory() as temp_dir,
+            patch.dict("os.environ", {"APP_ENV_FILE": "/nonexistent"}, clear=True),
+            patch("analystbot.core.config.load_dotenv") as load_dotenv,
+        ):
+            settings = Settings(project_root=Path(temp_dir))
+
+        self.assertEqual(settings.env_path, Path("/nonexistent"))
+        load_dotenv.assert_not_called()
+
+    def test_explicit_env_path_takes_precedence_over_environment_override(self) -> None:
+        with (
+            tempfile.TemporaryDirectory() as temp_dir,
+            patch.dict("os.environ", {"APP_ENV_FILE": "/nonexistent"}, clear=True),
+            patch("analystbot.core.config.load_dotenv") as load_dotenv,
+        ):
+            root = Path(temp_dir)
+            path = root / "settings.txt"
+            path.touch()
+            settings = Settings(project_root=root, _loaded=True)
+            settings.load(path)
+
+        self.assertEqual(settings.env_path, path)
+        load_dotenv.assert_called_once_with(path, override=True)
+
     def test_market_data_and_telegram_required_when_unscoped(self) -> None:
         settings = Settings(_loaded=True)
         valid, missing = settings.validate()
