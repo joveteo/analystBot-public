@@ -361,6 +361,16 @@ class FetchAndRateLimitTests(unittest.TestCase):
             [date_str_to_unix("2026-01-01"), date_str_to_unix("2026-01-02")],
         )
 
+    def test_single_symbol_lookup_accepts_lowercase(self) -> None:
+        streamer = FakeStreamer([_candle("BRK/B{=1d}", "2026-01-02")])
+        client = self._client(streamer)
+
+        bars = client.get_daily_bars_range("brk.b", "2026-01-02", "2026-01-02")
+
+        self.assertIsNotNone(bars)
+        assert bars is not None
+        self.assertEqual([bar["symbol"] for bar in bars], ["BRK.B"])
+
     def test_subscribes_to_official_daily_session_not_tho(self) -> None:
         streamer = FakeStreamer()
         client = self._client(streamer)

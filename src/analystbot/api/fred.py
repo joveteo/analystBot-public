@@ -178,26 +178,19 @@ class FredClient:
             "units": units,
         }
 
-        response = self._http.get(self.config.BASE_URL, params=params)
-
-        if response is None:
-            logger.warning(f"Request failed for {series_id}")
-            return None
-
-        if not response.ok:
-            logger.warning(f"API error for {series_id}: HTTP {response.status_code}")
-            return None
-
-        try:
-            data = response.json()
-        except ValueError:
-            logger.warning(f"Invalid JSON response for {series_id}")
+        data = self._get_json(self.config.BASE_URL, params, context=series_id)
+        if data is None:
             return None
 
         observations = data.get("observations", [])
+        if not isinstance(observations, list):
+            logger.warning("Unexpected observations payload for %s", series_id)
+            return None
 
         normalized = []
         for obs in observations:
+            if not isinstance(obs, dict):
+                continue
             date_str = obs.get("date")
             value_str = obs.get("value", ".")
 

@@ -96,6 +96,47 @@ class FredUnitsAndAlignmentTests(unittest.TestCase):
         params = fake_http.get.call_args.kwargs["params"]
         self.assertEqual(params["units"], "lin")
 
+    def test_fetch_rejects_invalid_observation_responses(self) -> None:
+        client = FredClient("test-api-key")
+        client._http = MagicMock()
+        bad_status = MagicMock(ok=False, status_code=503)
+        bad_json = MagicMock(ok=True)
+        bad_json.json.side_effect = ValueError("invalid JSON")
+        for response in (
+            None,
+            bad_status,
+            bad_json,
+            MagicMock(ok=True, **{"json.return_value": [1, 2]}),
+            MagicMock(ok=True, **{"json.return_value": {"observations": None}}),
+            MagicMock(ok=True, **{"json.return_value": {"observations": "invalid"}}),
+        ):
+            with self.subTest(response=response):
+                client._http.get.return_value = response
+                self.assertIsNone(
+                    client.fetch_series_observations("UNRATE", "2026-01-01")
+                )
+
+    def test_fetch_normalizes_valid_rows_alongside_malformed_entries(self) -> None:
+        client = FredClient("test-api-key")
+        client._http = MagicMock()
+        client._http.get.return_value = MagicMock(ok=True)
+        client._http.get.return_value.json.return_value = {
+            "observations": [
+                None,
+                {"date": "2026-01-01", "value": "4.2"},
+                {"date": "2026-02-01", "value": "."},
+                {"date": "2026-03-01", "value": "invalid"},
+            ]
+        }
+        self.assertEqual(
+            client.fetch_series_observations("UNRATE", "2026-01-01"),
+            [
+                {"date": "2026-01-01", "value": 4.2},
+                {"date": "2026-02-01", "value": None},
+                {"date": "2026-03-01", "value": None},
+            ],
+        )
+
     def test_fetch_defaults_to_ten_year_start(self) -> None:
         client = FredClient("test-api-key")
         fake_http = MagicMock()
@@ -538,7 +579,14 @@ class FredTelegramGlanceTests(unittest.TestCase):
         self.assertIn("10-Year Treasury Rate", calls[0].kwargs["caption"])
 
     def test_jobs_caption_includes_shared_next_release_date(self) -> None:
-        with tempfile.TemporaryDirectory() as temp_dir:
+        now = datetime(2026, 11, 1, tzinfo=UTC)
+        with (
+            tempfile.TemporaryDirectory() as temp_dir,
+            patch("analystbot.services.fred_data.datetime", wraps=datetime) as calendar_clock,
+            patch("analystbot.services.notifications.formatters.datetime", wraps=datetime) as caption_clock,
+        ):
+            calendar_clock.now.return_value = now
+            caption_clock.now.return_value = now
             settings = self._settings(temp_dir)
             graphs = settings.data_dir / "fred_graphs"
             (graphs / "unrate_payems.png").write_bytes(b"png")
@@ -563,7 +611,7 @@ class FredTelegramGlanceTests(unittest.TestCase):
         )
         self.assertEqual(
             lines[1],
-            f"Next release date: {format_next_release_date('2026-11-06')}",
+            "Next release date: 2026-11-06, 5 Days",
         )
         self.assertIn("Unemployment Rate:", lines[2])
         self.assertIn("Nonfarm Payrolls:", lines[3])
@@ -946,7 +994,7 @@ class FredReleaseCalendarTests(unittest.TestCase):
             refresh_fred_release_calendar(
                 settings, client, ["UNRATE", "PAYEMS", "VIXCLS"]
             )
-            calendar = read_fred_release_calendar(settings)
+            calendar = read_fred_release_calendar(settings, as_of=date(2026, 11, 1))
         self.assertEqual(calendar["UNRATE"], "2026-11-06")
         self.assertEqual(calendar["PAYEMS"], "2026-11-06")
         self.assertNotIn("VIXCLS", calendar)

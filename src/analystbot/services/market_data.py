@@ -1,5 +1,5 @@
 from collections.abc import Sequence
-from datetime import UTC, date, datetime, time, timedelta
+from datetime import UTC, date, datetime, timedelta
 from typing import Any
 from zoneinfo import ZoneInfo
 
@@ -10,12 +10,11 @@ from analystbot.core.config import Settings
 from analystbot.core.log_config import log_script_end, log_script_start, setup_logger
 from analystbot.core.validation import validate_symbol
 from analystbot.db import StockRepository, connect
-from analystbot.db.date_utils import datetime_to_unix, unix_to_datetime
+from analystbot.db.date_utils import unix_to_datetime
 
 logger = setup_logger("services.market_data")
 
 _NYSE_TZ = ZoneInfo("America/New_York")
-_NYSE_REGULAR_CLOSE = time(16, 0)
 
 
 ETF_WATCHLIST = (
@@ -232,17 +231,12 @@ class TradingCalendar:
     def __init__(self):
         self.calendar = mcal.get_calendar("NYSE")
 
-    def get_trading_days(self, start_date: datetime, end_date: datetime) -> set[int]:
-        schedule = self.calendar.schedule(start_date=start_date, end_date=end_date)
-        return {
-            datetime_to_unix(datetime.combine(d, datetime.min.time()))
-            for d in schedule.index.date
-        }
-
-    def is_trading_day(self, timestamp: int) -> bool:
-        dt = unix_to_datetime(timestamp)
-        days = self.get_trading_days(dt, dt)
-        return timestamp in days
+    def session_close(self, day: date) -> datetime | None:
+        schedule = self.calendar.schedule(start_date=day, end_date=day)
+        if schedule.empty:
+            return None
+        close: datetime = schedule["market_close"].iloc[0].to_pydatetime()
+        return close
 
 
 class MarketDataService:
@@ -257,23 +251,12 @@ class MarketDataService:
         now = current_time or datetime.now(UTC)
         if now.tzinfo is None:
             now = now.replace(tzinfo=UTC)
-        ny_now = now.astimezone(_NYSE_TZ)
-        candidate = ny_now.date()
-        if ny_now.time() < _NYSE_REGULAR_CLOSE:
-            candidate -= timedelta(days=1)
-
-        while candidate.weekday() >= 5:
-            candidate -= timedelta(days=1)
-
+        candidate = now.astimezone(_NYSE_TZ).date()
         while True:
-            candidate_ts = datetime_to_unix(
-                datetime.combine(candidate, datetime.min.time())
-            )
-            if self.calendar.is_trading_day(candidate_ts):
+            close = self.calendar.session_close(candidate)
+            if close is not None and now >= close:
                 return candidate
             candidate -= timedelta(days=1)
-            while candidate.weekday() >= 5:
-                candidate -= timedelta(days=1)
 
     def plan_update(
         self,
