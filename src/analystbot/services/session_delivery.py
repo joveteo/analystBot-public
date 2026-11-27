@@ -5,6 +5,7 @@ from datetime import UTC, datetime
 from typing import Any
 
 from analystbot.core.config import Settings
+from analystbot.core.json_state import write_json_atomically
 from analystbot.core.log_config import setup_logger
 from analystbot.db import StockRepository, connect
 from analystbot.db.date_utils import unix_to_date_str
@@ -36,10 +37,14 @@ def read_session_send_state(settings: Settings) -> dict[str, Any]:
         return {}
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError):
         logger.warning("Ignoring invalid session send state: %s", path)
         return {}
     if not isinstance(data, dict):
+        return {}
+    sent = data.get("sent")
+    if not isinstance(sent, list) or not all(isinstance(item, str) for item in sent):
+        logger.warning("Ignoring malformed session send state: %s", path)
         return {}
     return data
 
@@ -55,8 +60,7 @@ def already_sent(
     state = read_session_send_state(settings)
     if state.get("session_date") != session_date:
         return False
-    sent = state.get("sent") or []
-    return item in sent
+    return item in state["sent"]
 
 
 def mark_sent(
@@ -71,7 +75,7 @@ def mark_sent(
     if state.get("session_date") != session_date:
         sent: list[str] = []
     else:
-        sent = [str(value) for value in (state.get("sent") or [])]
+        sent = state["sent"]
     if item not in sent:
         sent.append(item)
     payload = {
@@ -79,6 +83,4 @@ def mark_sent(
         "sent": sent,
         "timestamp": datetime.now(UTC).isoformat(),
     }
-    path = get_session_send_state_path(settings)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+    write_json_atomically(get_session_send_state_path(settings), payload)

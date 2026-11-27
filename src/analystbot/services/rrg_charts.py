@@ -10,6 +10,7 @@ import matplotlib
 import pandas as pd
 
 from analystbot.core.config import Settings
+from analystbot.core.json_state import write_json_atomically
 from analystbot.core.log_config import log_script_end, log_script_start, setup_logger
 from analystbot.db import StockRepository, connect
 from analystbot.db.date_utils import unix_to_datetime
@@ -177,8 +178,8 @@ def read_rrg_state(settings: Settings) -> str | None:
         return None
 
     try:
-        data = json.loads(state_path.read_text())
-    except (json.JSONDecodeError, OSError):
+        data = json.loads(state_path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError):
         logger.warning("Ignoring invalid RRG state artifact: %s", state_path)
         return None
 
@@ -195,9 +196,7 @@ def write_rrg_state(settings: Settings, week_ending: date) -> None:
         "last_sent_week_ending": week_ending.isoformat(),
         "timestamp": datetime.now(UTC).isoformat(),
     }
-    state_path = get_state_path(settings)
-    state_path.parent.mkdir(parents=True, exist_ok=True)
-    state_path.write_text(json.dumps(payload, indent=2))
+    write_json_atomically(get_state_path(settings), payload)
 
 
 def _zscore(series: "pd.Series", window: int) -> "pd.Series":

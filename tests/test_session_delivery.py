@@ -3,6 +3,7 @@ from __future__ import annotations
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from analystbot.core.config import Settings
 from analystbot.db.date_utils import date_str_to_unix
@@ -17,6 +18,47 @@ from analystbot.services.session_delivery import (
 
 
 class SessionDeliveryStateTests(unittest.TestCase):
+    def test_invalid_sent_values_do_not_suppress_or_break_delivery(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            settings = Settings(_loaded=True)
+            settings.data_dir = Path(temp_dir)
+            path = get_session_send_state_path(settings)
+            date = "2026-10-02"
+            for bad_state in (
+                b'{"session_date":"2026-10-02","sent":"vixfix"}',
+                b'{"session_date":"2026-10-02","sent":42}',
+                b'{"session_date":"2026-10-02","sent":{"vixfix":true}}',
+                b"\xff",
+            ):
+                with self.subTest(state=bad_state):
+                    path.write_bytes(bad_state)
+                    self.assertFalse(already_sent(settings, "vixfix", date))
+                    mark_sent(settings, "heatmap", date)
+                    self.assertTrue(already_sent(settings, "heatmap", date))
+
+    def test_failed_state_replacement_preserves_previous_delivery(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            settings = Settings(_loaded=True)
+            settings.data_dir = Path(temp_dir)
+            path = get_session_send_state_path(settings)
+            date = "2026-10-02"
+            mark_sent(settings, "vixfix", date)
+            saved_state = path.read_bytes()
+
+            with (
+                patch("os.replace", side_effect=OSError("replacement failed")),
+                self.assertRaisesRegex(OSError, "replacement failed"),
+            ):
+                mark_sent(settings, "heatmap", date)
+
+            self.assertEqual(path.read_bytes(), saved_state)
+            self.assertEqual(list(path.parent.iterdir()), [path])
+            self.assertTrue(already_sent(settings, "vixfix", date))
+            self.assertFalse(already_sent(settings, "heatmap", date))
+            mark_sent(settings, "heatmap", date)
+            self.assertTrue(already_sent(settings, "vixfix", date))
+            self.assertTrue(already_sent(settings, "heatmap", date))
+
     def test_mark_sent_is_per_session(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             settings = Settings(_loaded=True)

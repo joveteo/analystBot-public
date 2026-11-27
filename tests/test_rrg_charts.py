@@ -106,6 +106,19 @@ class RrgStateTests(unittest.TestCase):
             self.assertIsNone(read_rrg_state(settings))
             path.write_text(json.dumps({"other": True}), encoding="utf-8")
             self.assertIsNone(read_rrg_state(settings))
+            path.write_bytes(b"\xff")
+            self.assertIsNone(read_rrg_state(settings))
+
+    def test_failed_state_replacement_keeps_previous_week(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            settings = _settings(temp_dir)
+            write_rrg_state(settings, date(2026, 10, 2))
+            with (
+                patch("os.replace", side_effect=OSError("replacement failed")),
+                self.assertRaises(OSError),
+            ):
+                write_rrg_state(settings, date(2026, 10, 9))
+            self.assertEqual(read_rrg_state(settings), "2026-10-02")
 
 
 class ComputeRrgSeriesTests(unittest.TestCase):

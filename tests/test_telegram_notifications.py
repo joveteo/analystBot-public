@@ -2,13 +2,15 @@ from __future__ import annotations
 
 import tempfile
 import unittest
-from datetime import date
+from datetime import UTC, date, datetime
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 from analystbot.api.telegram import TelegramClient
 from analystbot.core.config import Settings
+from analystbot.db.date_utils import date_str_to_unix
 from analystbot.db.sqlite import connect
+from analystbot.db.stock_repo import StockRepository
 from analystbot.services.notifications.delivery import (
     NotificationService,
     run_chart_album_forced,
@@ -20,7 +22,8 @@ from analystbot.services.notifications.delivery import (
     run_vix_telegram,
     run_vixfix,
 )
-from analystbot.services.rrg_charts import WeeklyDecision
+from analystbot.services.rrg_charts import WeeklyDecision, read_rrg_state
+from analystbot.services.session_delivery import already_sent
 
 
 class FakeResponse:
@@ -296,6 +299,69 @@ class HeatmapChartTopicTests(unittest.TestCase):
 
 
 class ChartAlbumTests(unittest.TestCase):
+    def test_scheduled_album_retries_failed_send_and_deduplicates_success(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            settings = Settings(
+                project_root=Path(temp_dir),
+                _loaded=True,
+                telegram_bot_token="token",
+                telegram_chat_id="chat",
+                telegram_chat_chart_id="chart-topic",
+            )
+            graphs = settings.data_dir / "chart_graphs"
+            graphs.mkdir(parents=True)
+            heatmap = graphs / "market_heatmap_top100_d1.png"
+            rrg = graphs / "rrg_sp500_sectors_weekly.png"
+            for path in (heatmap, rrg):
+                path.write_bytes(b"png")
+            session_date = "2026-10-02"
+            conn = connect(settings.db_path)
+            try:
+                self.assertTrue(
+                    StockRepository(conn).upsert_ohlc(
+                        {
+                            "symbol": "SPY",
+                            "date": date_str_to_unix(session_date),
+                            "open": 100.0,
+                            "high": 103.0,
+                            "low": 99.0,
+                            "close": 102.0,
+                        }
+                    )
+                )
+            finally:
+                conn.close()
+            service = NotificationService(settings)
+            stages = ["Market Heatmap Chart", "Sector RRG Chart"]
+            client = MagicMock()
+            client.send_media_group.side_effect = [False, True]
+
+            with (
+                patch(
+                    "analystbot.services.notifications.delivery.TelegramClient",
+                    return_value=client,
+                ),
+                patch("analystbot.services.notifications.delivery.datetime") as clock,
+            ):
+                clock.now.return_value = datetime(2026, 10, 3, 1, tzinfo=UTC)
+                self.assertFalse(service.send_chart_album(succeeded_stages=stages))
+                self.assertFalse(already_sent(settings, "heatmap", session_date))
+                self.assertIsNone(read_rrg_state(settings))
+
+                self.assertTrue(service.send_chart_album(succeeded_stages=stages))
+                self.assertTrue(already_sent(settings, "heatmap", session_date))
+                self.assertEqual(read_rrg_state(settings), session_date)
+                self.assertTrue(service.send_chart_album(succeeded_stages=stages))
+
+            self.assertEqual(client.send_media_group.call_count, 2)
+            self.assertEqual(
+                client.send_media_group.call_args_list[0],
+                client.send_media_group.call_args_list[1],
+            )
+            items = client.send_media_group.call_args.args[0]
+            self.assertEqual([item[0] for item in items], [heatmap, rrg])
+            client.send_photo.assert_not_called()
+
     def test_two_chart_photos_use_media_group(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             settings = Settings(
@@ -305,6 +371,7 @@ class ChartAlbumTests(unittest.TestCase):
                 telegram_chat_chart_id="chart-topic",
             )
             settings.data_dir = Path(temp_dir)
+            settings.db_path = settings.data_dir / "live_stocks.db"
             graphs = settings.data_dir / "chart_graphs"
             graphs.mkdir()
             supertrend = graphs / "supertrend_spy_qqq_iwm_1y.png"
