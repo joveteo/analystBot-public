@@ -27,6 +27,10 @@ from analystbot.services.fred_chart_catalog import (
     FRED_FORCE_FLAG_SPECS,
     select_fred_chart_work,
 )
+from analystbot.services.fred_data import (
+    read_fred_update_state,
+    write_fred_update_state,
+)
 
 
 def _settings() -> Settings:
@@ -47,6 +51,50 @@ def _runner(stages: list[StageConfig]) -> PipelineRunner:
 
 
 class PipelineDependencyTests(unittest.TestCase):
+    def test_critical_worker_timeout_clears_stale_fred_state_and_stops_pipeline(
+        self,
+    ) -> None:
+        downstream = MagicMock()
+        runner = _runner(
+            [
+                StageConfig(
+                    name="FRED Update",
+                    description="fetch",
+                    run_fn=MagicMock(),
+                    critical=True,
+                    timeout_seconds=30,
+                    worker_id="fred_data",
+                ),
+                StageConfig(name="Delivery", description="send", run_fn=downstream),
+            ]
+        )
+        self.addCleanup(runner._temp_dir.cleanup)
+        write_fred_update_state(runner.settings, ["UNRATE"], ["UNRATE"])
+        worker = MagicMock()
+        worker.communicate.side_effect = subprocess.TimeoutExpired(
+            cmd=["python"], timeout=30, stderr=b"worker exceeded deadline"
+        )
+        with (
+            patch("analystbot.pipeline.runner.subprocess.Popen", return_value=worker),
+            patch("analystbot.pipeline.runner._kill_process_group") as kill,
+        ):
+            self.assertFalse(runner.run())
+
+        kill.assert_called_once_with(worker)
+        worker.wait.assert_called_once_with(timeout=5)
+        downstream.assert_not_called()
+        state = read_fred_update_state(runner.settings)
+        assert state is not None
+        self.assertEqual(state["updated_series_ids"], [])
+        self.assertEqual(state["processed_series_ids"], [])
+        report = json.loads(runner.report_path.read_text())
+        self.assertFalse(report["overall_success"])
+        self.assertEqual(report["stages_summary"]["timeout"], 1)
+        self.assertEqual(
+            [(stage["name"], stage["status"]) for stage in report["stages"]],
+            [("FRED Update", "timeout")],
+        )
+
     def test_skips_telegram_when_chart_stage_fails(self) -> None:
         sent: list[bool] = []
         stages = [

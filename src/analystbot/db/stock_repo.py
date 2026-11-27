@@ -101,21 +101,17 @@ class StockRepository:
         """
 
     def _prepare_ohlc_row(self, data: dict[str, Any]) -> tuple[Any, ...] | None:
-        normalized_data = dict(data)
-        date_val = normalized_data.get("date")
-        if isinstance(date_val, int):
-            normalized_data["date"] = normalize_daily_unix_timestamp(date_val)
-        if not self._validate_data(normalized_data):
+        if not self._validate_data(data):
             return None
         return (
-            normalized_data["symbol"],
-            normalized_data["date"],
-            normalized_data["open"],
-            normalized_data["high"],
-            normalized_data["low"],
-            normalized_data["close"],
-            normalized_data.get("volume"),
-            normalized_data.get("vwap"),
+            data["symbol"],
+            normalize_daily_unix_timestamp(data["date"]),
+            data["open"],
+            data["high"],
+            data["low"],
+            data["close"],
+            data.get("volume"),
+            data.get("vwap"),
         )
 
     def _validate_data(self, data: dict[str, Any]) -> bool:
@@ -131,7 +127,7 @@ class StockRepository:
 
         for price_field in ["open", "high", "low", "close"]:
             price = data.get(price_field)
-            if price is not None and (
+            if (
                 not isinstance(price, (int, float))
                 or not isfinite(price)
                 or price < self.config.MIN_PRICE

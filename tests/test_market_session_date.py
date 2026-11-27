@@ -6,15 +6,11 @@ from unittest.mock import MagicMock, patch
 from zoneinfo import ZoneInfo
 
 from analystbot.core.config import Settings
-from analystbot.db.date_utils import date_str_to_unix, unix_to_datetime
+from analystbot.db.date_utils import date_str_to_unix
 from analystbot.services.market_data import MarketDataService
 
 _NY = ZoneInfo("America/New_York")
 _ASIA_TZ = ZoneInfo("Asia/Tokyo")
-
-
-def _weekday_trading_day(timestamp: int) -> bool:
-    return unix_to_datetime(timestamp).weekday() < 5
 
 
 class LatestCompletedMarketDateTests(unittest.TestCase):
@@ -22,12 +18,7 @@ class LatestCompletedMarketDateTests(unittest.TestCase):
         self.service = MarketDataService(Settings(_loaded=True))
 
     def _completed_on(self, current_time: datetime) -> date:
-        with patch.object(
-            self.service.calendar,
-            "is_trading_day",
-            side_effect=_weekday_trading_day,
-        ):
-            return self.service.get_latest_completed_market_date(current_time)
+        return self.service.get_latest_completed_market_date(current_time)
 
     def test_cron_0535_asia_includes_monday_session_after_us_close(self) -> None:
         now = datetime(2026, 9, 15, 5, 35, tzinfo=_ASIA_TZ)
@@ -50,20 +41,28 @@ class LatestCompletedMarketDateTests(unittest.TestCase):
         self.assertEqual(self._completed_on(now), date(2026, 9, 11))
 
     def test_holiday_walks_back_to_prior_session(self) -> None:
-        def is_trading(timestamp: int) -> bool:
-            day = unix_to_datetime(timestamp).date()
-            if day == date(2026, 9, 7):
-                return False
-            return day.weekday() < 5
+        now = datetime(2026, 9, 7, 17, 35, tzinfo=_NY)
+        self.assertEqual(self._completed_on(now), date(2026, 9, 4))
 
-        with patch.object(
-            self.service.calendar, "is_trading_day", side_effect=is_trading
+    def test_thanksgiving_early_close_is_a_completed_session_at_18_utc(self) -> None:
+        self.assertEqual(
+            self._completed_on(datetime(2026, 11, 27, 17, 59, tzinfo=UTC)),
+            date(2026, 11, 25),
+        )
+        self.assertEqual(
+            self._completed_on(datetime(2026, 11, 27, 18, 0, tzinfo=UTC)),
+            date(2026, 11, 27),
+        )
+
+    def test_regular_close_moves_one_hour_at_dst_boundary(self) -> None:
+        for now, expected in (
+            (datetime(2026, 3, 6, 20, 59, tzinfo=UTC), date(2026, 3, 5)),
+            (datetime(2026, 3, 6, 21, 0, tzinfo=UTC), date(2026, 3, 6)),
+            (datetime(2026, 3, 9, 19, 59, tzinfo=UTC), date(2026, 3, 6)),
+            (datetime(2026, 3, 9, 20, 0), date(2026, 3, 9)),
         ):
-            now = datetime(2026, 9, 7, 17, 35, tzinfo=_NY)
-            self.assertEqual(
-                self.service.get_latest_completed_market_date(now),
-                date(2026, 9, 4),
-            )
+            with self.subTest(now=now):
+                self.assertEqual(self._completed_on(now), expected)
 
 
 class PlanUpdateTests(unittest.TestCase):

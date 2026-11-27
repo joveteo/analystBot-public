@@ -214,6 +214,35 @@ class StockRepositoryTests(unittest.TestCase):
         )
         self.assertEqual(self.repo.get_all_symbols(), [])
 
+    def test_missing_ohlc_is_rejected_without_aborting_valid_batch_rows(self) -> None:
+        missing_high = _bar("MSFT")
+        del missing_high["high"]
+        null_close = {**_bar("SPY"), "close": None}
+        self.assertFalse(self.repo.upsert_ohlc(missing_high))
+        self.assertEqual(
+            self.repo.upsert_ohlc_batch([missing_high, null_close, _bar()]), (1, 2)
+        )
+        self.assertEqual(self.repo.get_all_symbols(), ["AAPL"])
+
+    def test_out_of_range_timestamp_is_rejected_before_normalization(self) -> None:
+        invalid = {**_bar("MSFT"), "date": 10**20}
+        self.assertEqual(self.repo.upsert_ohlc_batch([invalid, _bar()]), (1, 1))
+        self.assertEqual(self.repo.get_all_symbols(), ["AAPL"])
+
+    def test_batch_database_failure_rolls_back_prior_rows_in_same_batch(self) -> None:
+        self.assertTrue(self.repo.upsert_ohlc(_bar("SPY")))
+        self.conn.executescript("""
+            CREATE TRIGGER block_msft_insert
+            BEFORE INSERT ON stock_data
+            WHEN NEW.symbol = 'MSFT'
+            BEGIN
+                SELECT RAISE(ABORT, 'blocked');
+            END
+        """)
+        self.assertEqual(self.repo.upsert_ohlc_batch([_bar(), _bar("MSFT")]), (0, 2))
+        self.assertEqual(self.repo.get_all_symbols(), ["SPY"])
+        self.assertEqual(self.repo.upsert_ohlc_batch([_bar()]), (1, 0))
+
     def test_get_signals_derives_percentage_from_close_and_sma(self) -> None:
         self.repo.upsert_ohlc(_bar("AAPL"))
         self.repo.update_indicators(

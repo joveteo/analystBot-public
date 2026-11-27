@@ -730,7 +730,7 @@ class TastytradeClient:
     ) -> list[dict[str, Any]] | None:
         return self.get_daily_bars_batch(
             [BarRequest(symbol=symbol, from_date=from_date, to_date=to_date)]
-        ).get(symbol)
+        ).get(symbol.upper())
 
     def get_daily_bars_batch(
         self, requests: Sequence[BarRequest]
