@@ -582,8 +582,12 @@ class FredTelegramGlanceTests(unittest.TestCase):
         now = datetime(2026, 11, 1, tzinfo=UTC)
         with (
             tempfile.TemporaryDirectory() as temp_dir,
-            patch("analystbot.services.fred_data.datetime", wraps=datetime) as calendar_clock,
-            patch("analystbot.services.notifications.formatters.datetime", wraps=datetime) as caption_clock,
+            patch(
+                "analystbot.services.fred_data.datetime", wraps=datetime
+            ) as calendar_clock,
+            patch(
+                "analystbot.services.notifications.formatters.datetime", wraps=datetime
+            ) as caption_clock,
         ):
             calendar_clock.now.return_value = now
             caption_clock.now.return_value = now
